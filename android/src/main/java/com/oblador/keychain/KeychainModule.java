@@ -56,17 +56,28 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void setGenericPasswordForOptions(String service, String username, String password, Promise promise) {
+    public void setGenericPasswordForOptions(ReadableMap options, String username, String password, Promise promise) {
         try {
             if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
                 throw new EmptyParameterException("you passed empty or null username/password");
             }
-            service = getDefaultServiceIfNull(service);
 
+            String service = getDefaultServiceIfNull(options.hasKey("service") ? options.getString("service") : null);
             CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel();
+
+            boolean userAuthenticationRequired = options.hasKey("userAuthenticationRequired") ? options.getBoolean("userAuthenticationRequired") : false;
+            currentCipherStorage.setUserAuthenticationRequired(userAuthenticationRequired);
+
+            int userAuthenticationValidityDurationSeconds = options.hasKey("userAuthenticationValidityDurationSeconds")
+                ? options.getInt("userAuthenticationValidityDurationSeconds") : -1;
+            currentCipherStorage.setUserAuthenticationValidityDurationSeconds(userAuthenticationValidityDurationSeconds);
 
             EncryptionResult result = currentCipherStorage.encrypt(service, username, password);
             prefsStorage.storeEncryptedEntry(service, result);
+
+            // Reset the auth requirement and duration
+            currentCipherStorage.setUserAuthenticationRequired(false);
+            currentCipherStorage.setUserAuthenticationValidityDurationSeconds(-1);
 
             promise.resolve(true);
         } catch (EmptyParameterException e) {
@@ -79,9 +90,9 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void getGenericPasswordForOptions(String service, Promise promise) {
+    public void getGenericPasswordForOptions(ReadableMap options, Promise promise) {
         try {
-            service = getDefaultServiceIfNull(service);
+            String service = getDefaultServiceIfNull(options.hasKey("service") ? options.getString("service") : null);
 
             CipherStorage currentCipherStorage = getCipherStorageForCurrentAPILevel();
 
@@ -98,6 +109,13 @@ public class KeychainModule extends ReactContextBaseJavaModule {
                 decryptionResult = currentCipherStorage.decrypt(service, resultSet.usernameBytes, resultSet.passwordBytes);
             }
             else {
+                boolean userAuthenticationRequired = options.hasKey("userAuthenticationRequired") ? options.getBoolean("userAuthenticationRequired") : false;
+                currentCipherStorage.setUserAuthenticationRequired(userAuthenticationRequired);
+
+                int userAuthenticationValidityDurationSeconds = options.hasKey("userAuthenticationValidityDurationSeconds")
+                    ? options.getInt("userAuthenticationValidityDurationSeconds") : -1;
+                currentCipherStorage.setUserAuthenticationValidityDurationSeconds(userAuthenticationValidityDurationSeconds);
+
                 // The encrypted data is encrypted using an older CipherStorage, so we need to decrypt the data first, then encrypt it using the current CipherStorage, then store it again and return
                 CipherStorage oldCipherStorage = getCipherStorageByName(resultSet.cipherStorageName);
                 // decrypt using the older cipher storage
@@ -108,6 +126,10 @@ public class KeychainModule extends ReactContextBaseJavaModule {
                 prefsStorage.storeEncryptedEntry(service, encryptionResult);
                 // clean up the old cipher storage
                 oldCipherStorage.removeKey(service);
+
+                // Reset the auth requirement and duration
+                currentCipherStorage.setUserAuthenticationRequired(false);
+                currentCipherStorage.setUserAuthenticationValidityDurationSeconds(-1);
             }
 
             WritableMap credentials = Arguments.createMap();
@@ -127,9 +149,9 @@ public class KeychainModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void resetGenericPasswordForOptions(String service, Promise promise) {
+    public void resetGenericPasswordForOptions(ReadableMap options, Promise promise) {
         try {
-            service = getDefaultServiceIfNull(service);
+            String service = getDefaultServiceIfNull(options.hasKey("service") ? options.getString("service") : null);
 
             // First we clean up the cipher storage (using the cipher storage that was used to store the entry)
             ResultSet resultSet = prefsStorage.getEncryptedEntry(service);
@@ -151,17 +173,23 @@ public class KeychainModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void setInternetCredentialsForServer(@NonNull String server, String username, String password, ReadableMap unusedOptions, Promise promise) {
-        setGenericPasswordForOptions(server, username, password, promise);
+        WritableMap map = Arguments.createMap();
+        map.putString("server", server);
+        setGenericPasswordForOptions(map, username, password, promise);
     }
 
     @ReactMethod
     public void getInternetCredentialsForServer(@NonNull String server, ReadableMap unusedOptions, Promise promise) {
-        getGenericPasswordForOptions(server, promise);
+        WritableMap map = Arguments.createMap();
+        map.putString("server", server);
+        getGenericPasswordForOptions(map, promise);
     }
 
     @ReactMethod
     public void resetInternetCredentialsForServer(@NonNull String server, ReadableMap unusedOptions, Promise promise) {
-        resetGenericPasswordForOptions(server, promise);
+        WritableMap map = Arguments.createMap();
+        map.putString("server", server);
+        resetGenericPasswordForOptions(map, promise);
     }
 
     @ReactMethod

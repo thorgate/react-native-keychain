@@ -135,14 +135,9 @@ export function resetInternetCredentials(
 }
 
 function getOptionsArgument(serviceOrOptions?: string | Options) {
-  if (Platform.OS !== 'ios') {
-    return typeof serviceOrOptions === 'object'
-      ? serviceOrOptions.service
-      : serviceOrOptions;
-  }
   return typeof serviceOrOptions === 'string'
     ? { service: serviceOrOptions }
-    : serviceOrOptions;
+    : serviceOrOptions || {};
 }
 
 /**

@@ -40,4 +40,10 @@ public interface CipherStorage {
     String getCipherStorageName();
 
     int getMinSupportedApiLevel();
+
+    boolean getUserAuthenticationRequired();
+    void setUserAuthenticationRequired(boolean value);
+
+    int getUserAuthenticationValidityDurationSeconds();
+    void setUserAuthenticationValidityDurationSeconds(int value);
 }

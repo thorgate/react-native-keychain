@@ -3,8 +3,10 @@ package com.oblador.keychain.cipherStorage;
 import android.annotation.TargetApi;
 import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyInfo;
 import android.security.keystore.KeyProperties;
 import android.support.annotation.NonNull;
+import android.util.Log;
 
 import com.oblador.keychain.exceptions.CryptoFailedException;
 import com.oblador.keychain.exceptions.KeyStoreAccessException;
@@ -27,6 +29,8 @@ import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.IvParameterSpec;
 
 @TargetApi(Build.VERSION_CODES.M)
@@ -42,6 +46,29 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
                     ENCRYPTION_BLOCK_MODE + "/" +
                     ENCRYPTION_PADDING;
     public static final int ENCRYPTION_KEY_SIZE = 256;
+
+    private boolean userAuthenticationRequired = false;
+    private int userAuthenticationValidityDurationSeconds = -1;
+
+    @Override
+    public boolean getUserAuthenticationRequired() {
+        return userAuthenticationRequired;
+    }
+
+    @Override
+    public void setUserAuthenticationRequired(boolean value) {
+        userAuthenticationRequired = value;
+    }
+
+    @Override
+    public int getUserAuthenticationValidityDurationSeconds() {
+        return userAuthenticationValidityDurationSeconds;
+    }
+
+    @Override
+    public void setUserAuthenticationValidityDurationSeconds(int value) {
+        userAuthenticationValidityDurationSeconds = value;
+    }
 
     @Override
     public String getCipherStorageName() {
@@ -62,6 +89,8 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
 
             if (!keyStore.containsAlias(service)) {
                 generateKeyAndStoreUnderAlias(service);
+            } else {
+                Log.e("RNKeychainManager", "Had alias already");
             }
 
             Key key = keyStore.getKey(service, null);
@@ -80,13 +109,18 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
     }
 
     private void generateKeyAndStoreUnderAlias(@NonNull String service) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidAlgorithmParameterException {
+        Log.e("RNKeychainManager", String.format("Creating new key: %d-%d",
+            userAuthenticationRequired ? 1 : 0,
+            userAuthenticationValidityDurationSeconds));
         AlgorithmParameterSpec spec = new KeyGenParameterSpec.Builder(
                 service,
                 KeyProperties.PURPOSE_DECRYPT | KeyProperties.PURPOSE_ENCRYPT)
                 .setBlockModes(ENCRYPTION_BLOCK_MODE)
                 .setEncryptionPaddings(ENCRYPTION_PADDING)
                 .setRandomizedEncryptionRequired(true)
-                //.setUserAuthenticationRequired(true) // Will throw InvalidAlgorithmParameterException if there is no fingerprint enrolled on the device
+                // Will throw InvalidAlgorithmParameterException if there is no fingerprint enrolled on the device
+                .setUserAuthenticationRequired(userAuthenticationRequired)
+                .setUserAuthenticationValidityDurationSeconds(userAuthenticationValidityDurationSeconds)
                 .setKeySize(ENCRYPTION_KEY_SIZE)
                 .build();
 
@@ -104,6 +138,15 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
             KeyStore keyStore = getKeyStoreAndLoad();
 
             Key key = keyStore.getKey(service, null);
+
+            // Retrieve information about the SecretKey from the KeyStore.
+            SecretKey secretKey = (SecretKey) key;
+            SecretKeyFactory factory = SecretKeyFactory.getInstance(secretKey.getAlgorithm(), KEYSTORE_TYPE);
+            KeyInfo info = (KeyInfo) factory.getKeySpec(secretKey, KeyInfo.class);
+
+            Log.e("RNKeychainManager", String.format("Sup: %d-%d",
+                    info.isUserAuthenticationRequired() ? 1 : 0,
+                    info.getUserAuthenticationValidityDurationSeconds()));
 
             String decryptedUsername = decryptBytes(key, username);
             String decryptedPassword = decryptBytes(key, password);
@@ -148,6 +191,8 @@ public class CipherStorageKeystoreAESCBC implements CipherStorage {
             cipherOutputStream.write(value.getBytes("UTF-8"));
             cipherOutputStream.close();
             return outputStream.toByteArray();
+        } catch (UserNotAuthenticatedException e) {
+            throw new CryptoFailedException("Could not trigger (not implemented) fingerprint scanner for service " + service, e);
         } catch (Exception e) {
             throw new CryptoFailedException("Could not encrypt value for service " + service, e);
         }

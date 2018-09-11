@@ -90,4 +90,24 @@ public class CipherStorageFacebookConceal implements CipherStorage {
     private String getEntityPrefix(String service) {
         return KEYCHAIN_DATA + ":" + service;
     }
+
+    @Override
+    public boolean getUserAuthenticationRequired() {
+        return false;
+    }
+
+    @Override
+    public void setUserAuthenticationRequired(boolean value) {
+        // Facebook conceal has no concept of userAuthenticationRequired
+    }
+
+    @Override
+    public int getUserAuthenticationValidityDurationSeconds() {
+        return -1;
+    }
+
+    @Override
+    public void setUserAuthenticationValidityDurationSeconds(int value) {
+        // Facebook conceal has no concept of userAuthenticationValidityDurationSeconds
+    }
 }
