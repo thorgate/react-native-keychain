@@ -372,6 +372,34 @@ RCT_EXPORT_METHOD(setInternetCredentialsForServer:(NSString *)server withUsernam
   [self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
 }
 
+RCT_EXPORT_METHOD(hasInternetCredentialsForServer:(NSString *)server resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSDictionary *query = @{
+    (__bridge NSString *)kSecClass: (__bridge id)(kSecClassInternetPassword),
+    (__bridge NSString *)kSecAttrServer: server,
+    (__bridge NSString *)kSecReturnAttributes: (__bridge id)kCFBooleanTrue,
+    (__bridge NSString *)kSecReturnData: (__bridge id)kCFBooleanTrue,
+    (__bridge NSString *)kSecMatchLimit: (__bridge NSString *)kSecMatchLimitOne
+  };
+
+  // Look up server in the keychain
+  NSDictionary *found = nil;
+  CFTypeRef foundTypeRef = NULL;
+  OSStatus osStatus = SecItemCopyMatching((__bridge CFDictionaryRef) query, (CFTypeRef*)&foundTypeRef);
+
+  if (osStatus != noErr && osStatus != errSecItemNotFound) {
+    NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
+    return rejectWithError(reject, error);
+  }
+
+  found = (__bridge NSDictionary*)(foundTypeRef);
+  if (!found) {
+    return resolve(@(NO));
+  }
+
+  return resolve(@(YES));
+}
+
 RCT_EXPORT_METHOD(getInternetCredentialsForServer:(NSString *)server withOptions:(NSDictionary *)options resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
   NSDictionary *query = @{
