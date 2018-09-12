@@ -374,30 +374,31 @@ RCT_EXPORT_METHOD(setInternetCredentialsForServer:(NSString *)server withUsernam
 
 RCT_EXPORT_METHOD(hasInternetCredentialsForServer:(NSString *)server resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
-  NSDictionary *query = @{
-    (__bridge NSString *)kSecClass: (__bridge id)(kSecClassInternetPassword),
-    (__bridge NSString *)kSecAttrServer: server,
-    (__bridge NSString *)kSecReturnAttributes: (__bridge id)kCFBooleanTrue,
-    (__bridge NSString *)kSecReturnData: (__bridge id)kCFBooleanTrue,
-    (__bridge NSString *)kSecMatchLimit: (__bridge NSString *)kSecMatchLimitOne
-  };
+  NSMutableDictionary *queryParts = [[NSMutableDictionary alloc] init];
+  queryParts[(__bridge NSString *)kSecClass] = (__bridge id)(kSecClassInternetPassword);
+  queryParts[(__bridge NSString *)kSecAttrServer] = server;
+  queryParts[(__bridge NSString *)kSecMatchLimit] = (__bridge NSString *)kSecMatchLimitOne;
+
+  if (@available(iOS 9, *)) {
+    queryParts[(__bridge NSString *)kSecUseAuthenticationUI] = (__bridge NSString *)kSecUseAuthenticationUIFail;
+  }
+
+  NSDictionary *query = [queryParts copy];
 
   // Look up server in the keychain
-  NSDictionary *found = nil;
-  CFTypeRef foundTypeRef = NULL;
-  OSStatus osStatus = SecItemCopyMatching((__bridge CFDictionaryRef) query, (CFTypeRef*)&foundTypeRef);
+  OSStatus osStatus = SecItemCopyMatching((__bridge CFDictionaryRef) query, nil);
 
-  if (osStatus != noErr && osStatus != errSecItemNotFound) {
-    NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
-    return rejectWithError(reject, error);
+  switch (osStatus) {
+    case noErr:
+    case errSecInteractionNotAllowed:
+      return resolve(@(YES));
+
+    case errSecItemNotFound:
+      return resolve(@(NO));
   }
 
-  found = (__bridge NSDictionary*)(foundTypeRef);
-  if (!found) {
-    return resolve(@(NO));
-  }
-
-  return resolve(@(YES));
+  NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
+  return rejectWithError(reject, error);
 }
 
 RCT_EXPORT_METHOD(getInternetCredentialsForServer:(NSString *)server withOptions:(NSDictionary *)options resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
