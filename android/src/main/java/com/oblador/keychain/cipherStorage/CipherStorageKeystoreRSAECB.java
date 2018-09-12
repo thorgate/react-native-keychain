@@ -51,7 +51,7 @@ import moe.feng.support.biometricprompt.BiometricPromptCompat.IAuthenticationCal
 
 @TargetApi(Build.VERSION_CODES.M)
 public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricPromptCompat.IAuthenticationCallback {
-    public static final String CIPHER_STORAGE_NAME = "KeystoreAESCBC";
+    public static final String CIPHER_STORAGE_NAME = "KeystoreRSAECB";
     public static final String DEFAULT_SERVICE = "RN_KEYCHAIN_DEFAULT_ALIAS";
     public static final String KEYSTORE_TYPE = "AndroidKeyStore";
     public static final String ENCRYPTION_ALGORITHM = KeyProperties.KEY_ALGORITHM_RSA;
@@ -120,8 +120,11 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
     public void onAuthenticationSucceeded(@NonNull BiometricPromptCompat.IAuthenticationResult result) {
         if (mDecryptParams != null && mDecryptParams.resultHandler != null) {
             try {
-                String decryptedUsername = decryptBytes(mDecryptParams.key, mDecryptParams.username);
-                String decryptedPassword = decryptBytes(mDecryptParams.key, mDecryptParams.password);
+                Cipher cipher = Cipher.getInstance(ENCRYPTION_TRANSFORMATION);
+                cipher.init(Cipher.DECRYPT_MODE, mDecryptParams.key);
+
+                String decryptedUsername = decryptBytes(mDecryptParams.username, cipher);
+                String decryptedPassword = decryptBytes(mDecryptParams.password, cipher);
                 mDecryptParams.resultHandler.onDecrypt(new DecryptionResult(decryptedUsername, decryptedPassword), null, null);
             } catch (Exception e) {
                 mDecryptParams.resultHandler.onDecrypt(null, null, e.getMessage());
@@ -130,36 +133,34 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
         }
     }
 
+    private boolean canStartFingerprintAuthentication() {
+        return (mKeyguardManager.isKeyguardSecure() && mContext.checkSelfPermission(Manifest.permission.USE_FINGERPRINT) == PackageManager.PERMISSION_GRANTED);
+    }
 
     private boolean startFingerprintAuthentication() throws Exception {
-        if (mKeyguardManager.isKeyguardSecure() &&
-                mContext.checkSelfPermission(Manifest.permission.USE_FINGERPRINT) == PackageManager.PERMISSION_GRANTED) {
-            // If we have a previous cancellationSignal, cancel it.
-            if (mBiometricPromptCompatCancellationSignal != null) {
-                mBiometricPromptCompatCancellationSignal.cancel();
-            }
-
-            mBiometricPromptCompatCancellationSignal = new CancellationSignal();
-
-            if (mActivity == null) {
-                throw new Exception("mActivity is null (make sure to call setCurrentActivity)");
-            }
-
-            try {
-                mBiometricPromptCompat = new BiometricPromptCompat.Builder(mActivity)
-                    .setTitle("Authentication required")
-                    .setSubtitle("Please use biometric authentication to unlock the app")
-                    .build();
-                mBiometricPromptCompat.authenticate(mBiometricPromptCompatCancellationSignal, this);
-            } catch (Exception e) {
-                e.printStackTrace();
-                return false;
-            }
-
-            return true;
+        // If we have a previous cancellationSignal, cancel it.
+        if (mBiometricPromptCompatCancellationSignal != null) {
+            mBiometricPromptCompatCancellationSignal.cancel();
         }
 
-        return false;
+        mBiometricPromptCompatCancellationSignal = new CancellationSignal();
+
+        if (mActivity == null) {
+            throw new Exception("mActivity is null (make sure to call setCurrentActivity)");
+        }
+
+        try {
+            mBiometricPromptCompat = new BiometricPromptCompat.Builder(mActivity)
+                .setTitle("Authentication required")
+                .setSubtitle("Please use biometric authentication to unlock the app")
+                .build();
+            mBiometricPromptCompat.authenticate(mBiometricPromptCompatCancellationSignal, this);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        return true;
     }
 
     @Override
@@ -215,7 +216,7 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
                 .setEncryptionPaddings(ENCRYPTION_PADDING)
                 .setRandomizedEncryptionRequired(true)
                 .setUserAuthenticationRequired(true)
-                .setUserAuthenticationValidityDurationSeconds(-1)
+                .setUserAuthenticationValidityDurationSeconds(2)
                 .setKeySize(ENCRYPTION_KEY_SIZE)
                 .build();
 
@@ -229,25 +230,27 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
     public void decrypt(@NonNull DecryptionResultHandler decryptionResultHandler, @NonNull String service, @NonNull byte[] username, @NonNull byte[] password) throws CryptoFailedException {
         service = getDefaultServiceIfEmpty(service);
 
+        KeyStore keyStore;
+        Key key = null;
+        Cipher cipher;
+
         try {
-            KeyStore keyStore = getKeyStoreAndLoad();
-
-            Key key = keyStore.getKey(service, null);
-
-            String decryptedUsername = null;
-            String decryptedPassword = null;
-            try {
-                decryptedUsername = decryptBytes(key, username);
-                decryptedPassword = decryptBytes(key, password);
-            } catch (UserNotAuthenticatedException e) {
-                mDecryptParams = new CipherDecryptionParams(decryptionResultHandler, key, username, password);
-                if (!this.startFingerprintAuthentication()) {
-                    throw new CryptoFailedException("Could not start fingerprint Authentication", e);
-                }
-                return;
+            keyStore = getKeyStoreAndLoad();
+            key = keyStore.getKey(service, null);
+            cipher = Cipher.getInstance(ENCRYPTION_TRANSFORMATION);
+            cipher.init(Cipher.DECRYPT_MODE, key);
+        } catch (UserNotAuthenticatedException e) {
+            mDecryptParams = new CipherDecryptionParams(decryptionResultHandler, key, username, password);
+            if (!canStartFingerprintAuthentication()) {
+                throw new CryptoFailedException("Could not start fingerprint Authentication", null);
             }
 
-            decryptionResultHandler.onDecrypt(new DecryptionResult(decryptedUsername, decryptedPassword), null, null);
+            try {
+                startFingerprintAuthentication();
+            } catch (Exception error) {
+                throw new CryptoFailedException("Could not start fingerprint Authentication", error);
+            }
+            return;
         } catch (KeyStoreException | UnrecoverableKeyException | NoSuchAlgorithmException e) {
             throw new CryptoFailedException("Could not get key from Keystore", e);
         } catch (KeyStoreAccessException e) {
@@ -256,6 +259,11 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
             e.printStackTrace();
             throw new CryptoFailedException("Unknown error: " + e.getMessage(), e);
         }
+
+        String decryptedUsername = decryptBytes(username, cipher);
+        String decryptedPassword = decryptBytes(password, cipher);
+
+        decryptionResultHandler.onDecrypt(new DecryptionResult(decryptedUsername, decryptedPassword), null, null);
     }
 
     @Override
@@ -271,7 +279,6 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
         } catch (KeyStoreException e) {
             throw new KeyStoreAccessException("Failed to access Keystore", e);
         } catch (Exception e) {
-            e.printStackTrace();
             throw new KeyStoreAccessException("Unknown error " + e.getMessage(), e);
         }
     }
@@ -291,15 +298,11 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
         }
     }
 
-    private String decryptBytes(Key key, byte[] bytes) throws CryptoFailedException, UserNotAuthenticatedException {
+    private String decryptBytes(byte[] bytes, Cipher cipher) throws CryptoFailedException {
         try {
-            Cipher cipher = Cipher.getInstance(ENCRYPTION_TRANSFORMATION);
             ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
-            // read the initialization vector from the beginning of the stream
-            cipher.init(Cipher.DECRYPT_MODE, key);
             // decrypt the bytes using a CipherInputStream
-            CipherInputStream cipherInputStream = new CipherInputStream(
-                    inputStream, cipher);
+            CipherInputStream cipherInputStream = new CipherInputStream(inputStream, cipher);
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             byte[] buffer = new byte[1024];
             while (true) {
@@ -310,10 +313,7 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
                 output.write(buffer, 0, n);
             }
             return new String(output.toByteArray(), Charset.forName("UTF-8"));
-        } catch (UserNotAuthenticatedException e) {
-            throw e;
         } catch (Exception e) {
-            e.printStackTrace();
             throw new CryptoFailedException("Could not decrypt bytes", e);
         }
     }
@@ -334,7 +334,7 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
     }
 
     @Override
-    public boolean getRequiresCurentActivity() {
+    public boolean getRequiresCurrentActivity() {
         return true;
     }
 
