@@ -1,6 +1,7 @@
 buildscript {
   repositories {
     jcenter()
+    maven { url 'https://jitpack.io' }
   }
 
   dependencies {
@@ -36,5 +37,9 @@ repositories {
 dependencies {
   implementation 'com.facebook.react:react-native:+'
   implementation 'com.facebook.conceal:conceal:1.1.3@aar'
-  implementation 'moe.feng.support.biometricprompt:library:1.0.1'
+
+  // Fixes `CalledFromWrongThreadException`
+  // see: https://github.com/oblador/react-native-keychain/pull/148#issuecomment-428968865
+  //      https://github.com/thorgate/BiometricPromptCompat/commit/776801e1976e58ef7ad9027e402f78da352bfd14
+  implementation 'com.github.thorgate:BiometricPromptCompat:776801e197'
 }
