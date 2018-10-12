@@ -154,6 +154,12 @@ public class CipherStorageKeystoreRSAECB implements CipherStorage, BiometricProm
             mBiometricPromptCompat = new BiometricPromptCompat.Builder(mActivity)
                 .setTitle("Authentication required")
                 .setSubtitle("Please use biometric authentication to unlock the app")
+                .setNegativeButton("Use password", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        mBiometricPromptCompatCancellationSignal.cancel();
+                    }
+                })
                 .build();
             mBiometricPromptCompat.authenticate(mBiometricPromptCompatCancellationSignal, this);
         } catch (Exception e) {
