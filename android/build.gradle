@@ -41,5 +41,6 @@ dependencies {
   // Fixes `CalledFromWrongThreadException`
   // see: https://github.com/oblador/react-native-keychain/pull/148#issuecomment-428968865
   //      https://github.com/thorgate/BiometricPromptCompat/commit/776801e1976e58ef7ad9027e402f78da352bfd14
-  implementation 'com.github.thorgate:BiometricPromptCompat:776801e197'
+  //      https://github.com/thorgate/BiometricPromptCompat/commit/708de56bdaf2765caa7f0eca0c7f1c7c3bf6822a
+  implementation 'com.github.thorgate:BiometricPromptCompat:708de56bda'
 }
